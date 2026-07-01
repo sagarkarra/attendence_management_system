@@ -1,222 +1,191 @@
-import sqlite3
 import tkinter as tk
 from tkinter import ttk, messagebox
-from datetime import date
+import json
+import os
+from datetime import datetime
+
+DATA_FILE = "gui_attendance_data.json"
 
 class AttendanceApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Attendance Management System")
-        self.root.geometry("650x450")
+        self.root.geometry("750x600")
+        self.root.config(bg="#f4f6f9")
         
-        # Initialize Database Tables
-        self.init_db()
+        # Load backend storage
+        self.student_records = self.load_data()
         
-        # Create Tabbed Layout Structure
-        self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(fill='both', expand=True, padx=10, pady=10)
-        
-        self.tab_add = ttk.Frame(self.notebook)
-        self.tab_mark = ttk.Frame(self.notebook)
-        self.tab_report = ttk.Frame(self.notebook)
-        
-        self.notebook.add(self.tab_add, text=" ➕ Add Student ")
-        self.notebook.add(self.tab_mark, text=" ✔️ Mark Attendance ")
-        self.notebook.add(self.tab_report, text=" 📊 View Report ")
-        
-        # Build individual screens
-        self.setup_add_tab()
-        self.setup_mark_tab()
-        self.setup_report_tab()
+        # Initialize UI layout configurations
+        self.create_styles()
+        self.build_ui()
+        self.refresh_table()
 
-    # =========================================================================
-    # 🗄️ DATA STORAGE & TABLES (Backend Setup)
-    # =========================================================================
-    def init_db(self):
-        conn = sqlite3.connect("attendance_sys.db")
-        cursor = conn.cursor()
-        # Students entity table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS students (
-                student_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL
-            )
-        """)
-        # Attendance tracking table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS attendance (
-                attendance_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                student_id INTEGER,
-                date TEXT NOT NULL,
-                status TEXT NOT NULL,
-                FOREIGN KEY(student_id) REFERENCES students(student_id)
-            )
-        """)
-        conn.commit()
-        conn.close()
+    def load_data(self):
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, "r") as file:
+                try:
+                    return json.load(file)
+                except json.JSONDecodeError:
+                    return {}
+        return {}
 
-    # =========================================================================
-    # 👥 FEATURE 1: Add Student Names
-    # =========================================================================
-    def setup_add_tab(self):
-        frame = ttk.LabelFrame(self.tab_add, text=" Register New Student Profile ")
-        frame.pack(padx=20, pady=40, fill="both", expand=True)
-        
-        ttk.Label(frame, text="Full Name:", font=("Arial", 11)).pack(pady=10)
-        self.name_entry = ttk.Entry(frame, width=30, font=("Arial", 11))
-        self.name_entry.pack(pady=5)
-        
-        btn_submit = ttk.Button(frame, text="Add Student Data", command=self.save_student)
-        btn_submit.pack(pady=20)
+    def save_data(self):
+        with open(DATA_FILE, "w") as file:
+            json.dump(self.student_records, file, indent=4)
 
-    def save_student(self):
+    def create_styles(self):
+        """Sets custom design tokens for a cleaner interface styling."""
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure("TLabel", background="#f4f6f9", font=("Helvetica", 10))
+        style.configure("Header.TLabel", font=("Helvetica", 14, "bold"), background="#f4f6f9")
+        style.configure("TButton", font=("Helvetica", 10, "bold"), padding=5)
+        style.configure("Treeview", font=("Helvetica", 10), rowheight=25)
+        style.configure("Treeview.Heading", font=("Helvetica", 10, "bold"), background="#e0e0e0")
+
+    def build_ui(self):
+        # --- TITLE BAR ---
+        title = ttk.Label(self.root, text="📊 Attendance Management System Dashboard", style="Header.TLabel")
+        title.pack(pady=15)
+
+        # --- UPPER SECTION: CONTROLS ---
+        control_frame = ttk.Frame(self.root, padding=10)
+        control_frame.pack(fill="x", padx=20, pady=5)
+
+        # Left Control side: Registering new student names
+        add_frame = ttk.LabelFrame(control_frame, text=" Add New Student ", padding=10)
+        add_frame.pack(side="left", fill="both", expand=True, padx=5)
+
+        ttk.Label(add_frame, text="Student Name:").pack(side="left", padx=5)
+        self.name_entry = ttk.Entry(add_frame, font=("Helvetica", 10))
+        self.name_entry.pack(side="left", fill="x", expand=True, padx=5)
+        
+        add_btn = ttk.Button(add_frame, text="Register", command=self.add_student)
+        add_btn.pack(side="left", padx=5)
+
+        # Right Control side: Action Panel triggers
+        action_frame = ttk.LabelFrame(control_frame, text=" Quick Actions ", padding=10)
+        action_frame.pack(side="right", fill="both", padx=5)
+
+        mark_btn = ttk.Button(action_frame, text="🗓️ Mark Today's Attendance", command=self.open_attendance_window)
+        mark_btn.pack(side="left", padx=5)
+
+        # --- LOWER SECTION: DATA GRID TABLE ---
+        table_frame = ttk.LabelFrame(self.root, text=" Attendance Database Records Summary ", padding=10)
+        table_frame.pack(fill="both", expand=True, padx=20, pady=15)
+
+        # Configuring standard columns for structural grid previewing 
+        columns = ("name", "total_sessions", "presents", "absents", "percentage")
+        self.tree = ttk.Treeview(table_frame, columns=columns, show="headings")
+        
+        self.tree.heading("name", text="Student Name")
+        self.tree.heading("total_sessions", text="Total Sessions")
+        self.tree.heading("presents", text="Present Count")
+        self.tree.heading("absents", text="Absent Count")
+        self.tree.heading("percentage", text="Attendance %")
+
+        self.tree.column("name", width=200, anchor="w")
+        self.tree.column("total_sessions", width=110, anchor="center")
+        self.tree.column("presents", width=110, anchor="center")
+        self.tree.column("absents", width=110, anchor="center")
+        self.tree.column("percentage", width=110, anchor="center")
+
+        # Vertical Scrollbar
+        scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        
+        self.tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+    def add_student(self):
         name = self.name_entry.get().strip()
         if not name:
-            messagebox.showerror("Error", "Student name field cannot be empty!")
+            messagebox.showerror("Error", "Name field input box cannot be empty!")
             return
-            
-        conn = sqlite3.connect("attendance_sys.db")
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO students (name) VALUES (?)", (name,))
-        conn.commit()
-        conn.close()
         
-        messagebox.showinfo("Success", f"'{name}' successfully added to data storage!")
-        self.name_entry.delete(0, tk.END)
-        self.refresh_mark_list() # Synchronize list state
+        if name in self.student_records:
+            messagebox.showwarning("Warning", f"Student '{name}' is already registered.")
+        else:
+            self.student_records[name] = []
+            self.save_data()
+            self.name_entry.delete(0, tk.END)
+            self.refresh_table()
+            messagebox.showinfo("Success", f"'{name}' added successfully to tracking index.")
 
-    # =========================================================================
-    # 📝 FEATURE 2: Mark Attendance Table Records
-    # =========================================================================
-    def setup_mark_tab(self):
-        self.today_str = date.today().strftime("%Y-%m-%d")
-        
-        lbl_date = ttk.Label(self.tab_mark, text=f"Date: {self.today_str}", font=("Arial", 12, "bold"))
-        lbl_date.pack(pady=10)
-        
-        # Container to house active student listing
-        self.scroll_frame = ttk.Frame(self.tab_mark)
-        self.scroll_frame.pack(fill="both", expand=True, padx=20, pady=5)
-        
-        self.canvas = tk.Canvas(self.scroll_frame, borderwidth=0)
-        self.scrollbar = ttk.Scrollbar(self.scroll_frame, orient="vertical", command=self.canvas.yview)
-        self.list_inner_frame = ttk.Frame(self.canvas)
-        
-        self.list_inner_frame.bind(
-            "<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-        )
-        self.canvas.create_window((0, 0), window=self.list_inner_frame, anchor="nw")
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
-        
-        self.canvas.pack(side="left", fill="both", expand=True)
-        self.scrollbar.pack(side="right", fill="y")
-        
-        # Submit execution button
-        btn_save = ttk.Button(self.tab_mark, text="Submit Attendance Ledger", command=self.submit_attendance)
-        btn_save.pack(pady=15)
-        
-        self.refresh_mark_list()
+    def refresh_table(self):
+        """Clears old analytical rows and recalculates state from storage."""
+        for row in self.tree.get_children():
+            self.tree.delete(row)
 
-    def refresh_mark_list(self):
-        # Clear prior entries
-        for widget in self.list_inner_frame.winfo_children():
-            widget.destroy()
+        for name, history in self.student_records.items():
+            total = len(history)
+            presents = sum(1 for item in history if item["status"] == "Present")
+            absents = total - presents
+            pct = f"{(presents / total) * 100:.1f}%" if total > 0 else "N/A"
             
-        conn = sqlite3.connect("attendance_sys.db")
-        cursor = conn.cursor()
-        cursor.execute("SELECT student_id, name FROM students")
-        self.student_records = cursor.fetchall()
-        conn.close()
-        
-        self.status_variables = {} # Trace radio selection bindings dynamically
-        
+            self.tree.insert("", "end", values=(name, total, presents, absents, pct))
+
+    def open_attendance_window(self):
+        """Feature 2 Overlay: Instantiates temporary popup checking profile lists."""
         if not self.student_records:
-            ttk.Label(self.list_inner_frame, text="No students added yet. Access the first tab.", font=("Arial", 10, "italic")).pack(pady=20)
+            messagebox.showwarning("Empty System", "Please register students prior to creating active logs.")
             return
 
-        for index, (s_id, name) in enumerate(self.student_records):
-            row_frame = ttk.Frame(self.list_inner_frame, padding=5)
-            row_frame.pack(fill="x", expand=True)
-            
-            ttk.Label(row_frame, text=f"{name} (ID: {s_id})", width=30, anchor="w").pack(side="left", padx=10)
-            
-            # Tracking variable default assignment: 'Present'
-            var = tk.StringVar(value="Present")
-            self.status_variables[s_id] = var
-            
-            ttk.Radiobutton(row_frame, text="P", variable=var, value="Present").pack(side="left", padx=5)
-            ttk.Radiobutton(row_frame, text="A", variable=var, value="Absent").pack(side="left", padx=5)
+        today = datetime.now().strftime("%Y-%m-%d")
+        
+        # Window popup definition
+        win = tk.Toplevel(self.root)
+        win.title(f"Attendance Tracking Panel: {today}")
+        win.geometry("400x450")
+        win.grab_set()  # Focus interaction lock helper
 
-    def submit_attendance(self):
-        if not self.student_records:
-            messagebox.showwarning("Warning", "Data log sequence aborted: No student profiles available.")
-            return
-            
-        conn = sqlite3.connect("attendance_sys.db")
-        cursor = conn.cursor()
-        
-        # Remove pre-existing overlaps for clean day overwrite validation logic
-        cursor.execute("DELETE FROM attendance WHERE date = ?", (self.today_str,))
-        
-        for s_id, var in self.status_variables.items():
-            status = var.get()
-            cursor.execute(
-                "INSERT INTO attendance (student_id, date, status) VALUES (?, ?, ?)",
-                (s_id, self.today_str, status)
-            )
-            
-        conn.commit()
-        conn.close()
-        messagebox.showinfo("Success", f"Attendance for {self.today_str} successfully committed!")
-        self.populate_report_table() # Update downstream report engine
+        ttk.Label(win, text=f"Mark Session Attendance For: {today}", font=("Helvetica", 11, "bold")).pack(pady=10)
 
-    # =========================================================================
-    # 📊 FEATURE 3: View Compiled Tables Report
-    # =========================================================================
-    def setup_report_tab(self):
-        btn_refresh = ttk.Button(self.tab_report, text="🔄 Refresh Database Report", command=self.populate_report_table)
-        btn_refresh.pack(pady=10)
-        
-        # Interactive Treeview grid implementation representing physical tables
-        columns = ("date", "id", "name", "status")
-        self.tree = ttk.Treeview(self.tab_report, columns=columns, show="headings")
-        
-        self.tree.heading("date", text="Log Date")
-        self.tree.heading("id", text="Student ID")
-        self.tree.heading("name", text="Student Name")
-        self.tree.heading("status", text="Attendance Status")
-        
-        self.tree.column("date", width=120, anchor="center")
-        self.tree.column("id", width=100, anchor="center")
-        self.tree.column("name", width=220, anchor="center")  # Modified layout column anchor to center alignment
-        self.tree.column("status", width=120, anchor="center")
-        
-        self.tree.pack(fill="both", expand=True, padx=15, pady=5)
-        self.populate_report_table()
+        # Create a container frame with an internal scrollable canvas for bulk students
+        canvas_container = ttk.Frame(win)
+        canvas_container.pack(fill="both", expand=True, padx=15, pady=5)
 
-    def populate_report_table(self):
-        # Flush existing visual rows
-        for item in self.tree.get_children():
-            self.tree.delete(item)
+        canvas = tk.Canvas(canvas_container, highlightthickness=0)
+        scrollable_frame = ttk.Frame(canvas)
+        v_scroll = ttk.Scrollbar(canvas_container, orient="vertical", command=canvas.yview)
+        
+        canvas.configure(yscrollcommand=v_scroll.set)
+        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        v_scroll.pack(side="right", fill="y")
+
+        # Dictionary tracking boolean variables mapped to user records
+        checkbox_vars = {}
+        
+        for name in self.student_records:
+            row = ttk.Frame(scrollable_frame, padding=5)
+            row.pack(fill="x", expand=True)
             
-        conn = sqlite3.connect("attendance_sys.db")
-        cursor = conn.cursor()
-        
-        # Relational JOIN logic mapping ID targets back to user names
-        query = """
-            SELECT a.date, s.student_id, s.name, a.status 
-            FROM attendance a
-            JOIN students s ON a.student_id = s.student_id
-            ORDER BY a.date DESC, s.name ASC
-        """
-        cursor.execute(query)
-        rows = cursor.fetchall()
-        conn.close()
-        
-        for row in rows:
-            self.tree.insert("", tk.END, values=row)
+            ttk.Label(row, text=name, width=25, anchor="w").pack(side="left")
+            
+            # Use BooleanVar: True means Present, False means Absent
+            var = tk.BooleanVar(value=True)
+            checkbox_vars[name] = var
+            
+            cb = ttk.Checkbutton(row, text="Present", variable=var)
+            cb.pack(side="right")
 
-# Run Environment Core Launcher
+        def submit_logs():
+            for name, status_var in checkbox_vars.items():
+                status_str = "Present" if status_var.get() else "Absent"
+                self.student_records[name].append({"date": today, "status": status_str})
+            
+            self.save_data()
+            self.refresh_table()
+            win.destroy()
+            messagebox.showinfo("Saved", f"Attendance roster submitted for session tracking date: {today}")
+
+        # Static execution processing button
+        ttk.Button(win, text="Submit Sheet Updates", command=submit_logs).pack(pady=15)
+
 if __name__ == "__main__":
     root = tk.Tk()
     app = AttendanceApp(root)
